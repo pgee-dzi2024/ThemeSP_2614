@@ -1,10 +1,137 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home: RGB Амбиентно осветление</title>
+    <!-- Bootstrap 5 CSS за модерен дизайн -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <style>
+        body { background-color: #f4f7f6; padding-top: 50px; }
+        .color-picker { width: 100%; height: 60px; border: none; cursor: pointer; border-radius: 8px; }
+        .card { box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 12px; border: none; }
+    </style>
 </head>
 <body>
-<h1>Свали си html шаблон!</h1>
+    <!-- Django CSRF Token (необходим за сигурността на POST заявките) -->
+    {% csrf_token %}
+
+    <div id="app" class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card p-4">
+                    <h3 class="text-center mb-4">
+                        <span style="color: #ff0000;">R</span><span style="color: #00aa00;">G</span><span style="color: #0000ff;">B</span>
+                        <span class="text-secondary">&nbsp;&nbsp;Контролен Панел</span>
+                    </h3>
+
+                    <!-- Избор на режим -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Режим на светене:</label>
+                        <select class="form-select form-select-lg" v-model="mode" @change="sendCommand">
+                            <option value="0">Изключено (Off)</option>
+                            <option value="1">Плътен цвят (Solid)</option>
+                            <option value="2">Бягаща светлина (Running)</option>
+                            <option value="3">Knight Rider (KITT)</option>
+                        </select>
+                    </div>
+
+                    <!-- Избор на цвят -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Избор на цвят:</label>
+                        <input type="color" class="color-picker" v-model="hexColor" @change="sendCommand">
+                    </div>
+
+                    <!-- Контрол на скоростта -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Скорост на ефекта:</label>
+                        <input type="range" class="form-range" min="1" max="100" v-model="uiSpeed" @change="sendCommand">
+                        <div class="d-flex justify-content-between text-muted small">
+                            <span>Бавно</span>
+                            <span>Бързо</span>
+                        </div>
+                    </div>
+
+                    <!-- Статус съобщение (Тук използваме новите делимитери) -->
+                    <div v-if="statusMessage" class="alert" :class="statusClass" role="alert">
+                        [[ statusMessage ]]
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref } = Vue;
+
+        createApp({
+            delimiters: ['[[', ']]'],
+
+            setup() {
+                const mode = ref("1");
+                const hexColor = ref("#00d0ff");
+                const uiSpeed = ref(50);
+
+                const statusMessage = ref("");
+                const statusClass = ref("alert-info");
+
+                const hexToRgb = (hex) => {
+                    let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                    return result ? {
+                        r: parseInt(result[1], 16),
+                        g: parseInt(result[2], 16),
+                        b: parseInt(result[3], 16)
+                    } : { r: 0, g: 0, b: 0 };
+                };
+
+                const sendCommand = async () => {
+                    const rgb = hexToRgb(hexColor.value);
+                    const arduinoDelay = 105 - uiSpeed.value;
+
+                    const payload = {
+                        mode: parseInt(mode.value),
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
+                        speed: arduinoDelay
+                    };
+
+                    try {
+                        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+                        const response = await axios.post('/api/control-led/', payload, {
+                            headers: {
+                                'X-CSRFToken': csrfToken
+                            }
+                        });
+
+                        statusMessage.value = "Успешно изпратено!";
+                        statusClass.value = "alert-success";
+
+                        setTimeout(() => statusMessage.value = "", 2000);
+
+                    } catch (error) {
+                        statusMessage.value = "Грешка при комуникация със сървъра.";
+                        statusClass.value = "alert-danger";
+                        console.error(error);
+                    }
+                };
+
+                return {
+                    mode,
+                    hexColor,
+                    uiSpeed,
+                    statusMessage,
+                    statusClass,
+                    sendCommand
+                };
+            }
+        }).mount('#app');
+    </script>
 </body>
 </html>
