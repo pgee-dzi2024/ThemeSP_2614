@@ -50,24 +50,28 @@ void recvWithEndMarker() {
   char endMarker = '\n';
   char rc;
 
-  // Четем от Bluetooth модула (btSerial), а не от Serial
+  // Четем от Bluetooth модула
   while (btSerial.available() > 0 && newData == false) {
     rc = btSerial.read();
+    
+    // ДЕБЪГ: Принтираме това, което получаваме от Bluetooth в USB серийния монитор
+    Serial.print("Получено от BT: ");
+    Serial.println(rc);
 
-    if (rc != endMarker) {
+    // Игнорираме \r (Carriage Return), ако приложението праща CR+LF
+    if (rc != endMarker && rc != '\r') {
       receivedChars[ndx] = rc;
       ndx++;
       if (ndx >= numChars) {
         ndx = numChars - 1;
       }
-    } else {
+    } else if (rc == endMarker) {
       receivedChars[ndx] = '\0';
       ndx = 0;
       newData = true;
     }
   }
 }
-
 void parseData() {
   if (newData == true) {
     int parsed = sscanf(receivedChars, "%d,%d,%d,%d,%d", &currentMode, &currentR, &currentG, &currentB, &currentSpeed);
@@ -159,5 +163,4 @@ void runEffectKnightRider() {
       krDir = 1;
     }
   }
-}
 }

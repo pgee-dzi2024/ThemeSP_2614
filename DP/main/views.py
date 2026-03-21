@@ -1,54 +1,63 @@
 import serial
 from django.shortcuts import render
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt  # ДОБАВЕНО: За изключване на CSRF защитата
+import json
+import time
 
-# Опитваме се да отворим порта глобално при стартиране на сървъра.
-# ВНИМАНИЕ: Промени 'COM3' на порта, който виждаш в Arduino IDE!
-try:
-    arduino_port = serial.Serial('COM3', 9600, timeout=1)
-    print("Успешна връзка с Arduino!")
-except Exception as e:
-    arduino_port = None
-    print(f"Грешка при отваряне на COM порта: {e}")
+arduino_port = None
+
+
+def get_serial_connection():
+    global arduino_port
+    if arduino_port is None or not arduino_port.is_open:
+        try:
+            arduino_port = serial.Serial('COM5', 9600, timeout=1)
+            time.sleep(1) # Даваме време на Bluetooth модула да се "осъзнае" след отварянето
+            print("Успешна връзка с Bluetooth на COM5!")
+        except Exception as e:
+            print(f"Грешка: {e}")
+            arduino_port = None
+    return arduino_port
 
 
 def index(request):
-    """ Това е изгледът за главната страница, където ще живее Vue.js """
     return render(request, 'main/index.html')
 
 
-@api_view(['POST'])
+@csrf_exempt  # ДОБАВЕНО: Позволява на Vue.js (Axios) да праща POST заявки свободно
 def control_led(request):
-    """ API endpoint, който приема команди от фронтенда и ги праща към Arduino """
-    if not arduino_port or not arduino_port.is_open:
-        return Response({'status': 'error', 'message': 'Няма връзка с хардуера (Arduino).'}, status=503)
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            mode = int(data.get('mode', 0))
+            r = int(data.get('r', 0))
+            g = int(data.get('g', 0))
+            b = int(data.get('b', 0))
+            speed = int(data.get('speed', 30))
 
-    try:
-        # Взимаме данните от POST заявката (с дефолтни стойности, ако липсват)
-        mode = int(request.data.get('mode', 0))
-        r = int(request.data.get('r', 0))
-        g = int(request.data.get('g', 0))
-        b = int(request.data.get('b', 0))
-        speed = int(request.data.get('speed', 30))
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            speed = max(5, speed)
 
-        # Валидираме данните, за да сме сигурни, че няма да пратим глупости
-        r, g, b = [max(0, min(255, val)) for val in (r, g, b)]
-        speed = max(5, speed)  # Минимално закъснение 5ms
+            command = f"{mode},{r},{g},{b},{speed}\n"
 
-        # Форматираме стринга точно както го очаква Arduino-то: РЕЖИМ,R,G,B,СКОРОСТ\n
-        command_str = f"{mode},{r},{g},{b},{speed}\n"
+            conn = get_serial_connection()
+            conn = get_serial_connection()
+            if conn:
+                print(f"Опит за изпращане на: {command.strip()}")  # Да видим в конзолата какво пращаме
 
-        # Изпращаме стринга по серийния кабел
-        arduino_port.write(command_str.encode('utf-8'))
+                # Изпращаме и ЗАДЪЛЖИТЕЛНО изчистваме буфера!
+                conn.write(command.encode('ascii'))  # ascii е по-сигурно за числа
+                conn.flush()  # Това принуждава Windows да изпрати данните ВЕДНАГА
 
-        return Response({
-            'status': 'success',
-            'message': 'Командата е изпратена успешно',
-            'command_sent': command_str.strip()
-        })
+                print("Успешно изпратено и флъшнато!")
+                return JsonResponse({'status': 'success'})
+            else:
+                return JsonResponse({'status': 'error', 'message': 'Няма връзка с COM5'})
 
-    except ValueError:
-        return Response({'status': 'error', 'message': 'Невалиден формат на данните.'}, status=400)
-    except Exception as e:
-        return Response({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+    return JsonResponse({'status': 'error', 'message': 'Невалиден метод'})
