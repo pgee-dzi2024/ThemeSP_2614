@@ -1,12 +1,10 @@
 #include <Adafruit_NeoPixel.h>
-#include <SoftwareSerial.h> // Добавяме библиотеката за софтуерен сериен порт
+#include <SoftwareSerial.h>
 
 #define PIN        6
 #define NUMPIXELS  120
 
 Adafruit_NeoPixel strip(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
-
-// Инициализираме Bluetooth на пинове 10 (RX) и 11 (TX)
 SoftwareSerial btSerial(10, 11);
 
 int currentMode = 0;
@@ -19,17 +17,16 @@ const byte numChars = 32;
 char receivedChars[numChars];
 boolean newData = false;
 
+// Флаг, който показва, че имаме нова команда и трябва да нарисуваме ефекта веднъж
+boolean modeChanged = true; 
+
 unsigned long previousMillis = 0;
-unsigned long previousSolidMillis = 0; // Таймер за плътния цвят
 int animationStep = 0;
 int krPos = 0;
 int krDir = 1;
 
 void setup() {
-  // Хардуерният порт остава за дебъгване (ако кабелът е включен)
   Serial.begin(9600);
-
-  // Стартираме Bluetooth комуникацията
   btSerial.begin(9600);
 
   strip.begin();
@@ -50,15 +47,9 @@ void recvWithEndMarker() {
   char endMarker = '\n';
   char rc;
 
-  // Четем от Bluetooth модула
   while (btSerial.available() > 0 && newData == false) {
     rc = btSerial.read();
     
-    // ДЕБЪГ: Принтираме това, което получаваме от Bluetooth в USB серийния монитор
-    Serial.print("Получено от BT: ");
-    Serial.println(rc);
-
-    // Игнорираме \r (Carriage Return), ако приложението праща CR+LF
     if (rc != endMarker && rc != '\r') {
       receivedChars[ndx] = rc;
       ndx++;
@@ -72,6 +63,7 @@ void recvWithEndMarker() {
     }
   }
 }
+
 void parseData() {
   if (newData == true) {
     int parsed = sscanf(receivedChars, "%d,%d,%d,%d,%d", &currentMode, &currentR, &currentG, &currentB, &currentSpeed);
@@ -79,17 +71,20 @@ void parseData() {
     if (parsed == 5) {
       if (currentSpeed < 5) currentSpeed = 5;
 
-      // Принтираме в USB Serial монитора за дебъгване
       Serial.print("BT Команда: Режим="); Serial.print(currentMode);
       Serial.print(" R="); Serial.print(currentR);
       Serial.print(" G="); Serial.print(currentG);
-      Serial.println();
+      Serial.print(" Скорост="); Serial.println(currentSpeed);
 
+      // Рестартираме променливите за анимациите
       animationStep = 0;
       krPos = 0;
       krDir = 1;
-      strip.clear();
-      strip.show();
+      
+      // Вдигаме флага, за да кажем на runEffects() да приложи промяната
+      modeChanged = true; 
+      
+      btSerial.println("OK: Mode " + String(currentMode));
     }
     newData = false;
   }
@@ -98,22 +93,30 @@ void parseData() {
 void runEffects() {
   switch (currentMode) {
     case 0:
-      strip.clear();
-      strip.show();
+      // Изчистваме лентата САМО ВЕДНЪЖ след получаване на командата
+      if (modeChanged) {
+        strip.clear();
+        strip.show();
+        modeChanged = false; // Сваляме флага, за да не блокираме Bluetooth-а
+      }
       break;
+      
     case 1:
-      // Използваме таймер, за да не блокираме четенето от Bluetooth
-      if (millis() - previousSolidMillis >= 50) {
-        previousSolidMillis = millis();
+      // Светваме плътен цвят САМО ВЕДНЪЖ
+      if (modeChanged) {
         for(int i = 0; i < NUMPIXELS; i++) {
           strip.setPixelColor(i, strip.Color(currentR, currentG, currentB));
         }
         strip.show();
+        modeChanged = false;
       }
       break;
+      
     case 2:
+      // При анимациите timer-ът си върши работата
       runEffectRunningLight();
       break;
+      
     case 3:
       runEffectKnightRider();
       break;
