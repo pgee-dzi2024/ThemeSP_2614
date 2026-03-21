@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from bleak import BleakScanner, BleakClient
 from django.shortcuts import render
 
-TARGET_NAME = "HC-05"
+TARGET_NAME = "SAMIRA"
 
 
 async def send_ble_command_async(command_str):
@@ -16,7 +16,7 @@ async def send_ble_command_async(command_str):
         target_device = next((d for d in devices if d.name and TARGET_NAME in d.name), None)
 
         if not target_device:
-            return False, "Устройството HC-05 не е намерено в обсег."
+            return False, f"Устройството {TARGET_NAME} не е намерено в обсег."
 
         async with BleakClient(target_device) as client:
             rx_char, tx_char = None, None
